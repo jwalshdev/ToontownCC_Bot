@@ -153,7 +153,7 @@ smallList4 = [Tyle('HIDDEN',24,False,False),Tyle('HIDDEN',25,False,False),Tyle('
 def getHidTile(number):
     return MEM_HIDDENCARD + "%s" % number
     
-
+Types = { 'TOONUP', 'TRAP','LURE','SOUND','SQUIRT','THROW','DROP'}
 class Board():
 
     ToonupFound = []    #will be in format [(x1,y1),(x2,y2)] when full
@@ -175,28 +175,62 @@ class Board():
     def startSweepingCards(self):
         #start at bottom left corner
         #this will snake from bottom to up right one down right etc
+        tempx=300
         for i in range(0,4):
-            
+            tempy = SCREEN_HEIGHT - (SCREEN_HEIGHT / 4)
+            py.moveTo(tempx,tempy)
             MemMoveUp()
             #scan once moved off cell
+            tempy-=195
+            tempx+=35
+            py.moveTo(tempx,tempy)
             MemMoveUp()
             #scanCardType(self.x, self.y)
+
+            tempy-=195
+            tempx+=35
+            py.moveTo(tempx,tempy)
+
             MemMoveUp()
+            
+            tempy-=195
+            tempx+=35
+            py.moveTo(tempx,tempy)
 
+            #x + 35 from front to back
+            #y - 195 front to back
+            #y start 815 every time (screenheight - 270)?
             MemMoveRight()
+            tempx+=150
+            py.moveTo(tempx,tempy)
 
             MemMoveDown()
+            tempy+=195
+            tempx-=35
+            py.moveTo(tempx,tempy)
+
             MemMoveDown()
+            tempy+=195
+            tempx-=35
+            py.moveTo(tempx,tempy)
+
             MemMoveDown()
+            tempy+=195
+            tempx-=35
+            py.moveTo(tempx,tempy)
+
             if i < 3:
                 MemMoveRight()
+                tempx+=150
+                py.moveTo(tempx,tempy)
+
         #maybe one last check of cards
         #if no more cards on table, return win
         #else return not a win, something went wrong
             
     def updatePlayerLoc(self):
         #for stamping (remembering) where the player location is to remember where to go back to so it can continue the snaking cycle
-        self.playerLoc(self.x,self.y)       
+        self.playerLoc = (self.x, self.y)      
 
     def MemFlipCard(self):
         py.press('delete')
@@ -261,7 +295,7 @@ def curDirMem(filename):
 #||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 #this part has to be redone in c++ because python is too slow for this, pull the .lib file from there and put it here
 def playTugOWarGame():
-    global amplayingAgain
+    #global amplayingAgain
     print("Playing Tug of War Game")
     DoneYet = False
     xOffset = (SCREEN_WIDTH / 10)
@@ -301,7 +335,7 @@ def playTugOWarGame():
         TOW_Tug(tappertime)
         DoneYet = TOW_isGameOver(GameOverRegion)
 
-    amPlayingGame=False
+    #amPlayingGame=False
 
 def incOrDecBy(GameRegion):
     amount = 0.0
@@ -446,7 +480,6 @@ def checkIfOnTrolley():
     findMe = py.locateOnScreen(curDirPlus(TROLLEY),confidence=.9)
     if findMe is None:
         raise Exception("No Trolley Found")
-        return
     print("On Trolley, hopefully no one else is on")
     time.sleep(12)
     
