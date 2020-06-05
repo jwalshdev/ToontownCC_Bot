@@ -1,6 +1,10 @@
 import pyautogui as py, time, os, cv2, winsound, tkinter as tk
 root = tk.Tk()
 
+"""TO DO:
+-add folders respective to their games in images for better performance
+"""
+
 SCREEN_WIDTH = root.winfo_screenwidth()
 SCREEN_HEIGHT = root.winfo_screenheight()
 TROLLEY = 'Trolley.PNG'
@@ -12,17 +16,26 @@ GETTING_BEANS = 'GettingJellyBeans.PNG'
 
 FREIND = 'Friends_Button.PNG'
 MEMORY_GAME = 'Memory_Game.PNG'
+MEM_HIDDENCARD = 'Memory_Tile_'
+
+MEM_CARDTOONUP = 'Toonup_Tile.PNG'
+MEM_CARDTRAP = 'Trap_Tile.PNG'
+MEM_CARDLURE = 'Dollar_Lure.PNG'
+MEM_CARDSOUND = 'Sound_Tile.PNG'
+MEM_CARDSQUIRT = 'Squirt_Tile.PNG'
+MEM_CARDTHROW = 'Throw_Tile.PNG'
+MEM_CARDDROP = 'Drop_Tile.PNG'
+
 TUG_O_WAR = 'Tug_O_War.PNG'
 TUG_O_WAR_GAMEOVER = 'Tug_O_War_Gameover.PNG'
 TOW_POWER_METER = 'TOW_Power_Meter.PNG'
 TOW_TOOFAST = 'TOW_TooFast.PNG'
 TOW_TOOSLOW = 'TOW-TooSlow.PNG'
 PLAY_LIST = [  MEMORY_GAME,]
-playingAgain=True
-amPlayingGame=False
+playingGameTypeAgain=True   #this is for input on wanna play more minigames or no
+amPlayingGame=False         #for the current state of playing (only for playingGame functions)
 
 """
-(yes I used a 0, using a O is a keyword)
 THINGS TO N0TE:
 1) When you hear beeps, that means it is searching for yes or no, yes is right half of screen and no is left 
 """
@@ -46,6 +59,16 @@ def main():
     afterGame()
     exitToPlayground()
 
+def gameSelectionScreen():
+    daGame, inList = checkGameInList()
+    if inList is False:
+        skipGame()
+    else:
+        startGame()
+        playMe(daGame)  #the actual playing of the game
+    waitForBeans()
+    #game played now we should get our jellybeans and then wait until the gag menu shows up 
+
 
 def playMe(daGame):
     global amPlayingGame
@@ -59,26 +82,186 @@ def playMe(daGame):
         # Get the function from switcher dictionary
         func = gameSolutions.get(daGame, lambda: "Invalid Game")
         # Execute the function
-        func(amPlayingGame)
+        func()
 
 
     print("Done playing, Did we win?")
 
 
-def playMemoryGame(amPlayingGame):
-    global playingAgain
+def playMemoryGame():
+    #For memory game
+    #moving up down .35 seconds seems to be most accurate
+    #moving left and right .27 looks right but might need to do a little slower, test further
+    #could probably be .269, .268 etc and check to .26 and see further into there
+    global amPlayingGame
     print("Playing Memory Game")
     DoneYet = False
     #getField()  #goes until it can find the game and start
     
-    #lets calculate how much time to walk up
-    moveBy('w',1.3)
+    
+    
+    """In doing movement tests, comment the following code up to the set of three quotation marked comment"""
+    bb = Board()
+    bb.startSweepingCards()
+
+
+    #MEM_HIDDENCARD
+    #MEM_CARDTOONUP
+    #MEM_CARDTRAP
+    #MEM_CARDLURE
+    #MEM_CARDSOUND ...
+    #allHiddenCards 
+
+    """end comment out"""
+    DoneYet=True
+    amPlayingGame=False
+
+
+
+class Tyle(object):
+    def __init__(self, cardType, tyleNum, alreadyMatched, isFacingUp):
+        self.cardType = 'HIDDEN'    #types will be a string to their respective type
+        self.tyleNum = tyleNum
+        self.alreadyMatched = False
+        self.isFacingUp = False
+    
+    def setCardType(self, newCardType):
+        return newCardType.upper()
+    
+    def setMatched(self):
+        self.alreadyMatched = True
+
+    def setIsFacingUp(self, booleanVal):
+        self.isFacingUp = booleanVal
+
+    def notSameCard(self, otherTyleNum):
+        if self.tyleNum != otherTyleNum:
+            return True
+        return False
+        
+    def checkMatch(self, otherCardType):
+        return True if self.cardType != 'HIDDEN' and self.cardType == otherCardType else False
+    
+    def isTypeHidden(self):
+        return True if self.cardType == 'HIDDEN' else False
+
+smallList = [Tyle('HIDDEN',0, False,False),Tyle('HIDDEN',1,False,False),Tyle('HIDDEN',2,False,False),Tyle('HIDDEN',3,False,False),Tyle('HIDDEN',4,False,False),Tyle('HIDDEN',5,False,False),Tyle('HIDDEN',6,False,False),Tyle('HIDDEN',7,False,False)]
+smallList2 = [Tyle('HIDDEN',8,False,False),Tyle('HIDDEN',9,False,False),Tyle('HIDDEN',10,False,False),Tyle('HIDDEN',11,False,False),Tyle('HIDDEN',12,False,False),Tyle('HIDDEN',13,False,False),Tyle('HIDDEN',14,False,False),Tyle('HIDDEN',15,False,False)]
+smallList3 = [Tyle('HIDDEN',16,False,False),Tyle('HIDDEN',17,False,False),Tyle('HIDDEN',18,False,False),Tyle('HIDDEN',19,False,False),Tyle('HIDDEN',20,False,False),Tyle('HIDDEN',21,False,False),Tyle('HIDDEN',22,False,False),Tyle('HIDDEN',23,False,False)]
+smallList4 = [Tyle('HIDDEN',24,False,False),Tyle('HIDDEN',25,False,False),Tyle('HIDDEN',26,False,False),Tyle('HIDDEN',27,False,False),Tyle('HIDDEN',28,False,False),Tyle('HIDDEN',29,False,False),Tyle('HIDDEN',30,False,False),Tyle('HIDDEN',31,False,False)]
+
+def getHidTile(number):
+    return MEM_HIDDENCARD + "%s" % number
+    
+
+class Board():
+
+    ToonupFound = []    #will be in format [(x1,y1),(x2,y2)] when full
+    TrapFound = []      #and [(x1,y1)] or [] when not. These are the coords of both pairs
+    LureFound = []
+    SoundFound = []
+    SquirtFound = []
+    ThrowFound = []
+    DropFound = []
+
+    def __init__(self):
+        super().__init__()  #idk 
+        self.isPlaying = True
+        self.board = [smallList,smallList2,smallList3,smallList4]
+        self.x = 0
+        self.y = 3
+        self.playerLoc = (self.x,self.y)    #used to remember where original spot was (or is)
+
+    def startSweepingCards(self):
+        #start at bottom left corner
+        #this will snake from bottom to up right one down right etc
+        for i in range(0,4):
+            
+            MemMoveUp()
+            #scan once moved off cell
+            MemMoveUp()
+            #scanCardType(self.x, self.y)
+            MemMoveUp()
+
+            MemMoveRight()
+
+            MemMoveDown()
+            MemMoveDown()
+            MemMoveDown()
+            if i < 3:
+                MemMoveRight()
+        #maybe one last check of cards
+        #if no more cards on table, return win
+        #else return not a win, something went wrong
+            
+    def updatePlayerLoc(self):
+        #for stamping (remembering) where the player location is to remember where to go back to so it can continue the snaking cycle
+        self.playerLoc(self.x,self.y)       
+
+    def MemFlipCard(self):
+        py.press('delete')
+
+    def scanCardType(self, xPos, yPos):
+        print('hi')
+
+    def checkForMatches(self):
+        #return 2 Tile tuples if there is, (0,0) if not
+        for i in range(0,4):
+            for j in range(0,8):    
+                for a in range(0,4):
+                    for b in range(0,8):
+                        if not self.board[a][b].cardType == 'HIDDEN':
+                            notSameTile = True if ((a,b) != (i,j)) else False
+                            bothFacingUp = True if self.board[i][j].isFacingUp and self.board[a][b].isFacingUp else False
+                            bothSameType = True if self.board[i][j].checkMatch(self.board[a][b]) else False
+                            if notSameTile and bothFacingUp and bothSameType:
+                                return ((i,j),(a,b))
+        return (0,0)
+
+    def moveUpCell(self):
+        if self.y - 1 >= 0:
+            MemMoveUp()
+            self.y - 1
+            
+    def moveDownCell(self):
+        if self.y + 1 <= 3:
+            MemMoveDown()
+            self.y + 1
+            
+    def moveRightCell(self):
+        if self.x + 1 <= 7:
+            MemMoveRight()
+            self.x + 1
+            
+    def moveLeftCell(self):
+        if self.x - 1 >= 0:
+            MemMoveLeft()
+            self.x - 1
+
+    
+
+def MemMoveLeft():
+    moveBy('a',.267)
+
+def MemMoveRight():
+    moveBy('d',.267)
+
+def MemMoveUp():
+    moveBy('w',.35)
+
+def MemMoveDown():
+    moveBy('s',.35)
+
+
+def curDirMem(filename):
+    filestuff = os.path.join('AdvancedScripts\\TTCC\\Trolley', os.path.join(r'images\MemGame', filename))        #this part is for me, as my current working directory is further back (will change when I change cwd)
+    return os.path.join(os.getcwd(),filestuff)
 
 #||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 #||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 #this part has to be redone in c++ because python is too slow for this, pull the .lib file from there and put it here
-def playTugOWarGame(amPlayingGame):
-    global playingAgain
+def playTugOWarGame():
+    global amplayingAgain
     print("Playing Tug of War Game")
     DoneYet = False
     xOffset = (SCREEN_WIDTH / 10)
@@ -94,10 +277,10 @@ def playTugOWarGame(amPlayingGame):
     GameRegion = (w-(w/6),h-(h-(h/10)), 320, 400)
     time.sleep(2) #wait a bit and then try to find the power meter 
     
-    if(py.locateOnScreen(curDirPlus(TOW_POWER_METER), confidence=.9)) is None:
+    """if(py.locateOnScreen(curDirPlus(TOW_POWER_METER), confidence=.9)) is None:
+        amPlayingGame=False
         raise Exception("Could not find Tug of War, Exiting Function")
-        playingAgain=False
-        return
+        return'"""
 
     print("Time to Play some Tug o War")
     tappertime = .5
@@ -156,32 +339,27 @@ def TOW_isGameOver(gameOverRegion):
 #||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 #Everything below this line is the process of looping around to navigate the screen to play games if found in list of games known to play
 #add game play above this section as this section will be last
-def gameSelectionScreen():
-    daGame, inList = checkGameInList()
-    if inList is False:
-        skipGame()
-    else:
-        startGame()
-        playMe(daGame)  #the actual playing of the game
- 
-        #game played now we should get our jellybeans and wait until the gag menu shows up
-    #game skipped/finished and gag menu pulled up
-    time.sleep(1.5)
-    
+
+
+def waitForBeans():
+    dabeans = py.locateOnScreen(curDirPlus(GETTING_BEANS),confidence=.9)
+    while dabeans is None:
+        time.sleep(1)
+        dabeans = py.locateOnScreen(curDirPlus(GETTING_BEANS),confidence=.9)
 
 def afterGame():
-    """Loops indefinitly as playingAgain is True"""
-    global playingAgain
+    """Loops indefinitly as playingGameTypeAgain is True"""
+    global playingGameTypeAgain
     #first wait until it is on jellybean page
     beans = py.locateOnScreen(curDirPlus(GETTING_BEANS))
     while beans is None:
         time.sleep(.5)
         beans = py.locateOnScreen(curDirPlus(GETTING_BEANS))
 
-    playingAgain = wannaPlayAgain()
-    while playingAgain is True:
-        playingAgain = wannaPlayAgain()
-        if playingAgain:
+    playingGameTypeAgain = wannaPlayAgain()
+    while playingGameTypeAgain is True:
+        playingGameTypeAgain = wannaPlayAgain()
+        if playingGameTypeAgain:
             time.sleep(.5)
             playAgain() #click play again
             time.sleep(3)   #might have to increase for slower computers (could decrease for faster)
@@ -189,13 +367,8 @@ def afterGame():
         time.sleep(2)
     time.sleep(2)  
 
-def imPath(filename):
-    """A shortcut for joining the 'images/'' file path, since it is used so often. Returns the filename with 'images/' prepended."""
-    fixMeLater = os.path.join('AdvancedScripts\\TTCC\\Trolley',os.path.join('images', filename))
-    return os.path.join(os.getcwd(), fixMeLater)
-
 def curDirPlus(filename):
-    filestuff = os.path.join('AdvancedScripts\\TTCC\\Trolley', imPath(filename))        #this part is for me, as my current working directory is further back (will change when I change cwd)
+    filestuff = os.path.join('AdvancedScripts\\TTCC\\Trolley', os.path.join('images', filename))        #this part is for me, as my current working directory is further back (will change when I change cwd)
     return os.path.join(os.getcwd(),filestuff)
 
 def checkGameInList():
@@ -207,7 +380,7 @@ def checkGameInList():
     isItIn = False
     Game = ""
     for i in range(0,len(PLAY_LIST)):
-        word = imPath(PLAY_LIST[i])
+        word = curDirPlus(PLAY_LIST[i])
         cc = py.locateOnScreen(curDirPlus(word))
         #print(cc)
         if cc is not None:
