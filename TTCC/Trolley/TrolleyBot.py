@@ -1,5 +1,11 @@
 import pyautogui as py, time, os, cv2, winsound, tkinter as tk
+from threading import Thread
+from pynput.mouse import Button, Controller
+from pynput.keyboard import Listener, KeyCode, Key, Controller
+
 root = tk.Tk()
+keyboard = Controller()
+mouse = Controller()
 
 """TO DO:
 -add folders respective to their games in images for better performance
@@ -15,7 +21,13 @@ PLAYGROUND_BUTTON = 'Exit_To_Playground_Button.PNG'
 GETTING_BEANS = 'GettingJellyBeans.PNG'
 
 FREIND = 'Friends_Button.PNG'
+
+""" 'KNOWN' GAME LIST"""
 MEMORY_GAME = 'Memory_Game.PNG'
+RING_GAME = 'RingGame.PNG' 
+TUG_O_WAR = 'Tug_O_War.PNG'
+"""\END 'KNOWN' GAME LIST"""
+
 MEM_HIDDENCARD = 'Memory_Tile_'
 
 MEM_CARDTOONUP = 'Toonup_Tile.PNG'
@@ -26,34 +38,48 @@ MEM_CARDSQUIRT = 'Squirt_Tile.PNG'
 MEM_CARDTHROW = 'Throw_Tile.PNG'
 MEM_CARDDROP = 'Drop_Tile.PNG'
 
-TUG_O_WAR = 'Tug_O_War.PNG'
+
 TUG_O_WAR_GAMEOVER = 'Tug_O_War_Gameover.PNG'
 TOW_POWER_METER = 'TOW_Power_Meter.PNG'
 TOW_TOOFAST = 'TOW_TooFast.PNG'
-TOW_TOOSLOW = 'TOW-TooSlow.PNG'
-PLAY_LIST = [  MEMORY_GAME,]
+TOW_TOOSLOW = 'TOW_TooSlow.PNG'
+TOW_isRunning = False
+TOW_GameOvertimer = None
+
+ToonupFound = []    #will be in format [(x1,y1),(x2,y2)] when considered ready to work with
+TrapFound = []      #and [(x1,y1)] or [] when not. These are the coords of both pairs
+LureFound = []
+SoundFound = []
+SquirtFound = []
+ThrowFound = []
+DropFound = []
+NoneFound = []
+CurrFlippedUp = []      #this is for keeping track of which is flipped open or not
+                        #when this reaches 2, the next flip will erase this and put the new tile as the first
+PLAY_LIST = [  MEMORY_GAME, ]
 playingGameTypeAgain=True   #this is for input on wanna play more minigames or no
 amPlayingGame=False         #for the current state of playing (only for playingGame functions)
+
 
 """
 THINGS TO N0TE:
 1) When you hear beeps, that means it is searching for yes or no, yes is right half of screen and no is left 
 """
+
 def main():
     global TUG_O_WAR
     setUpPreReq()
     time.sleep(2)
 
+    
     #I know these are good, so to move along after I will start from gag shop menu
     moveOntoTrolley()
     checkIfOnTrolley()
     #uncomment these when ready
 
-    #playAgain()
-
-
     #now that we are on trolley, check if the following game is in known game list
     #if it is not, skip and play again
+
 
     gameSelectionScreen()
     afterGame()
@@ -77,7 +103,8 @@ def playMe(daGame):
          #while amPlaying, keep looping around to play the game, once game is won we will set this to false to exit loop
         gameSolutions = {
             'Tug_O_War.PNG': playTugOWarGame,
-            'Memory_Game.PNG': playMemoryGame
+            'Memory_Game.PNG': playMemoryGame,
+            'RingGame.PNG': playRingGame
         }
         # Get the function from switcher dictionary
         func = gameSolutions.get(daGame, lambda: "Invalid Game")
@@ -87,6 +114,19 @@ def playMe(daGame):
 
     print("Done playing, Did we win?")
 
+def playRingGame():
+    getRingType()   #gets the ring in bottom right corner and uses that to find other of that type 
+
+
+
+#||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+#||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+"""TASK:
+-Eventually move mouse to right side in green wall so its not in the way and it can replay again
+-Keep track of amt of cards flipped up 
+-also account for the matches in the snake loop
+
+"""
 
 def playMemoryGame():
     #For memory game
@@ -103,8 +143,11 @@ def playMemoryGame():
     """In doing movement tests, comment the following code up to the set of three quotation marked comment"""
     bb = Board()
     bb.startSweepingCards()
-
-
+    """
+    for j in range(0,4):
+        for i in range(0,8):
+            bb.scanCertainCard(i,j)
+    """
     #MEM_HIDDENCARD
     #MEM_CARDTOONUP
     #MEM_CARDTRAP
@@ -115,7 +158,6 @@ def playMemoryGame():
     """end comment out"""
     DoneYet=True
     amPlayingGame=False
-
 
 
 class Tyle(object):
@@ -151,19 +193,12 @@ smallList3 = [Tyle('HIDDEN',16,False,False),Tyle('HIDDEN',17,False,False),Tyle('
 smallList4 = [Tyle('HIDDEN',24,False,False),Tyle('HIDDEN',25,False,False),Tyle('HIDDEN',26,False,False),Tyle('HIDDEN',27,False,False),Tyle('HIDDEN',28,False,False),Tyle('HIDDEN',29,False,False),Tyle('HIDDEN',30,False,False),Tyle('HIDDEN',31,False,False)]
 
 def getHidTile(number):
-    return MEM_HIDDENCARD + "%s" % number
+    if number > 31:
+        number = 31
+    return MEM_HIDDENCARD + "%s" % number + ".PNG"
     
 Types = { 'TOONUP', 'TRAP','LURE','SOUND','SQUIRT','THROW','DROP'}
 class Board():
-
-    ToonupFound = []    #will be in format [(x1,y1),(x2,y2)] when full
-    TrapFound = []      #and [(x1,y1)] or [] when not. These are the coords of both pairs
-    LureFound = []
-    SoundFound = []
-    SquirtFound = []
-    ThrowFound = []
-    DropFound = []
-
     def __init__(self):
         super().__init__()  #idk 
         self.isPlaying = True
@@ -171,203 +206,390 @@ class Board():
         self.x = 0
         self.y = 3
         self.playerLoc = (self.x,self.y)    #used to remember where original spot was (or is)
+    def clickMoveUpAndScan(self):
+        self.MemFlipCard()
+        time.sleep(.05)
+        self.moveUpCell()
+        self.scanCertainCard(self.x, self.y+1)
+        ogX = self.x
+        ogY = self.y
+        res = self.checkMatch()
+        if(res is not None):
+            firstLoc = res[0]
+            secondLoc = res[1]
 
+            #once they are flipped, go back to the original spot
+            #self.scanCertainCard(self.x, self.y+1)
+    def clickMoveRightAndScan(self):
+        self.MemFlipCard()
+        time.sleep(.05)
+        self.moveRightCell()
+        self.scanCertainCard(self.x-1, self.y)
+        res = self.checkMatch()
+        if(res is not None):
+            firstLoc = res[0]
+            secondLoc = res[1]
+
+        return
+    def clickMoveDownAndScan(self):
+        self.MemFlipCard()
+        time.sleep(.05)
+        self.moveDownCell()
+        self.scanCertainCard(self.x, self.y-1)
+        res = self.checkMatch()
+        if(res is not None):
+            firstLoc = res[0]
+            secondLoc = res[1]
+        #else if is none, match was found and made already
+
+        return
+    
     def startSweepingCards(self):
         #start at bottom left corner
         #this will snake from bottom to up right one down right etc
-        tempx=300
+        #tempx=300
+        sleep_time = .05
         for i in range(0,4):
-            tempy = SCREEN_HEIGHT - (SCREEN_HEIGHT / 4)
-            py.moveTo(tempx,tempy)
-            MemMoveUp()
-            #scan once moved off cell
-            tempy-=195
-            tempx+=35
-            py.moveTo(tempx,tempy)
-            MemMoveUp()
-            #scanCardType(self.x, self.y)
-
-            tempy-=195
-            tempx+=35
-            py.moveTo(tempx,tempy)
-
-            MemMoveUp()
-            
-            tempy-=195
-            tempx+=35
-            py.moveTo(tempx,tempy)
-
-            #x + 35 from front to back
-            #y - 195 front to back
-            #y start 815 every time (screenheight - 270)?
-            MemMoveRight()
-            tempx+=150
-            py.moveTo(tempx,tempy)
-
-            MemMoveDown()
-            tempy+=195
-            tempx-=35
-            py.moveTo(tempx,tempy)
-
-            MemMoveDown()
-            tempy+=195
-            tempx-=35
-            py.moveTo(tempx,tempy)
-
-            MemMoveDown()
-            tempy+=195
-            tempx-=35
-            py.moveTo(tempx,tempy)
-
+ 
+            self.clickMoveUpAndScan()
+            self.clickMoveUpAndScan()
+            self.clickMoveUpAndScan()
+            self.clickMoveRightAndScan()
+            self.clickMoveDownAndScan()
+            self.clickMoveDownAndScan()
+            self.clickMoveDownAndScan()
             if i < 3:
-                MemMoveRight()
-                tempx+=150
-                py.moveTo(tempx,tempy)
+                self.clickMoveRightAndScan()
+            else:
+                tempX = self.x
+                tempY = self.y
+                self.MemFlipCard()
+                self.moveUpCell()
+                self.scanCertainCard(tempX, tempY)
 
+        print(ToonupFound)
+        print(TrapFound)
+        print(LureFound)
+        print(SoundFound)
+        print(SquirtFound)
+        print(ThrowFound)
+        print(DropFound)
+        print(NoneFound)
         #maybe one last check of cards
         #if no more cards on table, return win
         #else return not a win, something went wrong
             
+    def checkMatch(self):
+        #will return the list if match, else none
+        if(len(ToonupFound) >= 2):
+            return ToonupFound
+        elif(len(TrapFound)>=2):
+            return TrapFound
+        elif(len(LureFound) >=2):
+            return LureFound
+        elif(len(SoundFound) >=2):
+            return SoundFound
+        elif(len(SquirtFound) >=2):
+            return SquirtFound
+        elif(len(ThrowFound) >=2):
+            return ThrowFound
+        elif(len(DropFound) >=2):
+            return DropFound
+        else:
+            return None
+    def scanCertainCard(self,locX,locY):
+        global ToonupFound, TrapFound, LureFound, SoundFound, SquirtFound, ThrowFound, DropFound, NoneFound
+        #scans the (locX,locY) tile to see which it is and adds that to array of types
+        #returns type
+        #this will be redone in cpython
+        tileNum = (8 * locY) + locX
+        if(locY == 0): #if in first row
+            daX = SCREEN_WIDTH/5 
+            daY = SCREEN_HEIGHT/4.5 
+            rwidth = 140 
+            rheight = 130
+            daRegion = (int(daX), int(daY), rwidth, rheight)
+            daX += (locX * rwidth)
+            if(py.locateOnScreen(curDirMem(getHidTile(tileNum)),region=daRegion, confidence=.5) != None):
+                print("Hidden Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDTOONUP),region=daRegion, confidence=.15) != None):
+                ToonupFound.append((locX,locY))
+                print("Toonup Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDTRAP),region=daRegion, confidence=.15) != None):
+                TrapFound.append((locX,locY))
+                print("Trap Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDLURE),region=daRegion, confidence=.15) != None):
+                LureFound.append((locX,locY))
+                print("Lure Found at: ",locX,locY)
+            
+            elif(py.locateOnScreen(curDirMem(MEM_CARDSOUND),region=daRegion, confidence=.15) != None):
+                SoundFound.append((locX,locY))
+                print("Sound Found at: ",locX,locY)
+
+            elif(py.locateOnScreen(curDirMem(MEM_CARDSQUIRT),region=daRegion, confidence=.15) != None):
+                SquirtFound.append((locX,locY))
+                print("Squirt Found at: ",locX,locY)
+
+            elif(py.locateOnScreen(curDirMem(MEM_CARDTHROW),region=daRegion, confidence=.15) != None):
+                ThrowFound.append((locX,locY))
+                print("Throw Found at: ",locX,locY)
+
+            elif(py.locateOnScreen(curDirMem(MEM_CARDDROP),region=daRegion, confidence=.15) != None):
+                DropFound.append((locX,locY))
+                print("Drop Found at: ",locX,locY)
+            else:
+                NoneFound.append((locX,locY))
+                print("No Tile Found at: ",locX,locY)
+        elif (locY == 1):
+            rwidth = 150 
+            rheight = 130
+            daX = SCREEN_WIDTH/5 - 35 + (locX * rwidth)
+            daY = SCREEN_HEIGHT/4.5 + rheight + 30
+            daRegion = (int(daX), int(daY), rwidth, rheight)
+            if(py.locateOnScreen(curDirMem(getHidTile(tileNum)),region=daRegion, confidence=.22) != None):
+                print("Hidden Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDTOONUP),region=daRegion, confidence=.15) != None):
+                ToonupFound.append((locX,locY))
+                print("Toonup Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDTRAP),region=daRegion, confidence=.15) != None):
+                TrapFound.append((locX,locY))
+                print("Trap Found at: ",locX,locY) 
+            elif(py.locateOnScreen(curDirMem(MEM_CARDLURE),region=daRegion, confidence=.15) != None):
+                LureFound.append((locX,locY))
+                print("Lure Found at: ",locX,locY)          
+            elif(py.locateOnScreen(curDirMem(MEM_CARDSOUND),region=daRegion, confidence=.15) != None):
+                SoundFound.append((locX,locY))
+                print("Sound Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDSQUIRT),region=daRegion, confidence=.15) != None):
+                SquirtFound.append((locX,locY))
+                print("Squirt Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDTHROW),region=daRegion, confidence=.15) != None):
+                ThrowFound.append((locX,locY))
+                print("Throw Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDDROP),region=daRegion, confidence=.15) != None):
+                DropFound.append((locX,locY))
+                print("Drop Found at: ",locX,locY)
+            else:
+                NoneFound.append((locX,locY))
+                print("No Tile Found at: ",locX,locY)
+        elif(locY == 2):      
+            rwidth = 155 
+            rheight = 130
+            daX = SCREEN_WIDTH/5 - (35) + (locX * rwidth)
+            daY = SCREEN_HEIGHT/4.5 + (2 * rheight) + (33 * 2)
+            daRegion = (int(daX), int(daY), rwidth, rheight)
+            if(py.locateOnScreen(curDirMem(getHidTile(tileNum)),region=daRegion, confidence=.32) != None):
+                print("Hidden Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDTOONUP),region=daRegion, confidence=.15) != None):
+                ToonupFound.append((locX,locY))
+                print("Toonup Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDTRAP),region=daRegion, confidence=.15) != None):
+                TrapFound.append((locX,locY))
+                print("Trap Found at: ",locX,locY) 
+            elif(py.locateOnScreen(curDirMem(MEM_CARDLURE),region=daRegion, confidence=.15) != None):
+                LureFound.append((locX,locY))
+                print("Lure Found at: ",locX,locY)          
+            elif(py.locateOnScreen(curDirMem(MEM_CARDSOUND),region=daRegion, confidence=.15) != None):
+                SoundFound.append((locX,locY))
+                print("Sound Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDSQUIRT),region=daRegion, confidence=.15) != None):
+                SquirtFound.append((locX,locY))
+                print("Squirt Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDTHROW),region=daRegion, confidence=.15) != None):
+                ThrowFound.append((locX,locY))
+                print("Throw Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDDROP),region=daRegion, confidence=.15) != None):
+                DropFound.append((locX,locY))
+                print("Drop Found at: ",locX,locY)
+            else:
+                NoneFound.append((locX,locY))
+                print("No Tile Found at: ",locX,locY)
+        else:
+            rwidth = 167 
+            rheight = 130
+            daX = SCREEN_WIDTH/5 - (30 * 3) + locX * rwidth
+            daY = (SCREEN_HEIGHT/4.5) + (3 * rheight) + 110
+            daRegion = (int(daX), int(daY), rwidth, rheight)
+            py.moveTo(daX,daY)
+            if(py.locateOnScreen(curDirMem(getHidTile(tileNum)),region=daRegion, confidence=.16) != None):
+                print("Hidden Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDTOONUP),region=daRegion, confidence=.15) != None):
+                ToonupFound.append((locX,locY))
+                print("Toonup Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDTRAP),region=daRegion, confidence=.15) != None):
+                TrapFound.append((locX,locY))
+                print("Trap Found at: ",locX,locY) 
+            elif(py.locateOnScreen(curDirMem(MEM_CARDLURE),region=daRegion, confidence=.15) != None):
+                LureFound.append((locX,locY))
+                print("Lure Found at: ",locX,locY)          
+            elif(py.locateOnScreen(curDirMem(MEM_CARDSOUND),region=daRegion, confidence=.15) != None):
+                SoundFound.append((locX,locY))
+                print("Sound Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDSQUIRT),region=daRegion, confidence=.15) != None):
+                SquirtFound.append((locX,locY))
+                print("Squirt Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDTHROW),region=daRegion, confidence=.15) != None):
+                ThrowFound.append((locX,locY))
+                print("Throw Found at: ",locX,locY)
+            elif(py.locateOnScreen(curDirMem(MEM_CARDDROP),region=daRegion, confidence=.15) != None):
+                DropFound.append((locX,locY))
+                print("Drop Found at: ",locX,locY)
+            else:
+                NoneFound.append((locX,locY))
+                print("No Tile Found at: ",locX,locY)
     def updatePlayerLoc(self):
         #for stamping (remembering) where the player location is to remember where to go back to so it can continue the snaking cycle
         self.playerLoc = (self.x, self.y)      
-
     def MemFlipCard(self):
         py.press('delete')
-
-    def scanCardType(self, xPos, yPos):
-        print('hi')
-
-    def checkForMatches(self):
-        #return 2 Tile tuples if there is, (0,0) if not
-        for i in range(0,4):
-            for j in range(0,8):    
-                for a in range(0,4):
-                    for b in range(0,8):
-                        if not self.board[a][b].cardType == 'HIDDEN':
-                            notSameTile = True if ((a,b) != (i,j)) else False
-                            bothFacingUp = True if self.board[i][j].isFacingUp and self.board[a][b].isFacingUp else False
-                            bothSameType = True if self.board[i][j].checkMatch(self.board[a][b]) else False
-                            if notSameTile and bothFacingUp and bothSameType:
-                                return ((i,j),(a,b))
-        return (0,0)
-
+        if(len(CurrFlippedUp) >= 2):    #if 2 (or somehow more) cards are hs
+            CurrFlippedUp.clear()
+            CurrFlippedUp.append((self.x,self.y))
+        else:
+            CurrFlippedUp.append((self.x,self.y))
     def moveUpCell(self):
         if self.y - 1 >= 0:
             MemMoveUp()
-            self.y - 1
-            
+            self.y -= 1      
     def moveDownCell(self):
         if self.y + 1 <= 3:
             MemMoveDown()
-            self.y + 1
-            
+            self.y += 1      
     def moveRightCell(self):
         if self.x + 1 <= 7:
             MemMoveRight()
-            self.x + 1
-            
+            self.x += 1     
     def moveLeftCell(self):
         if self.x - 1 >= 0:
             MemMoveLeft()
-            self.x - 1
+            self.x -= 1
 
-    
 
 def MemMoveLeft():
-    moveBy('a',.267)
-
+    moveBy('a',.265)
 def MemMoveRight():
-    moveBy('d',.267)
-
+    moveBy('d',.265)
 def MemMoveUp():
     moveBy('w',.35)
-
 def MemMoveDown():
     moveBy('s',.35)
 
 
-def curDirMem(filename):
-    filestuff = os.path.join('AdvancedScripts\\TTCC\\Trolley', os.path.join(r'images\MemGame', filename))        #this part is for me, as my current working directory is further back (will change when I change cwd)
-    return os.path.join(os.getcwd(),filestuff)
 
 #||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 #||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-#this part has to be redone in c++ because python is too slow for this, pull the .lib file from there and put it here
+"""Works for the most part, all tests are either ties or wins, could improve more"""
+
 def playTugOWarGame():
-    #global amplayingAgain
+    global TOW_isRunning
+    global amPlayingGame
     print("Playing Tug of War Game")
     DoneYet = False
-    xOffset = (SCREEN_WIDTH / 10)
+    #xOffset = (SCREEN_WIDTH / 10)
     #so the offset is the space shortened amount on both sides 
     #the Y is calculated by getting the bottom fifth of the screen and starting at the first point of it
     #width is subtracting 2 times the offset
     #height is the point measured before taken away from the screen height
-    GameOverRegion = (xOffset,(SCREEN_HEIGHT - (SCREEN_HEIGHT / 5)), SCREEN_WIDTH - (2 * xOffset), SCREEN_HEIGHT - (SCREEN_HEIGHT - (SCREEN_HEIGHT / 5)))
+    #GameOverRegion = (xOffset,(SCREEN_HEIGHT - (SCREEN_HEIGHT / 5)), SCREEN_WIDTH - (2 * xOffset), SCREEN_HEIGHT - (SCREEN_HEIGHT - (SCREEN_HEIGHT / 5)))
 
-    w = (SCREEN_WIDTH)/2
-    h = SCREEN_HEIGHT
+    #w = (SCREEN_WIDTH)/2
+    #h = SCREEN_HEIGHT
     
-    GameRegion = (w-(w/6),h-(h-(h/10)), 320, 400)
-    time.sleep(2) #wait a bit and then try to find the power meter 
-    
-    """if(py.locateOnScreen(curDirPlus(TOW_POWER_METER), confidence=.9)) is None:
-        amPlayingGame=False
-        raise Exception("Could not find Tug of War, Exiting Function")
-        return'"""
+    #GameRegion = (int(w-(w/6)),int(h-(h-(h/10))), 320, 400)
+    time.sleep(1.5) #wait a bit and then try to find the power meter 
 
     print("Time to Play some Tug o War")
-    tappertime = .5
-    TOW_Tug(tappertime) #first we will bring out bar up a bit
-    while not DoneYet:
-        #now we are playing the game, we have our game region
-        #inputs are 'a' and 'd' to tap left and right, the difference between taps must be done by certain intervals
-        #we will have a function that does intervals of left - sleep - right - sleep and take in for amount to sleep
-        #left and right can be done quickly
-        #
-        #we will have a variable that will be a placeholder for the sleep_interval in between taps
-        #This variable, tappertime, will start at .5 and increments and decrements will start at .15 (if not too slow or too fast) and .05 if too slow or too fast found
-        #a function incOrDecBy() will return a negative or positive float to be added into the tappertime
-        #
-        #
-        amt = incOrDecBy(GameRegion=GameRegion)
-        tappertime += amt
-        TOW_Tug(tappertime)
-        DoneYet = TOW_isGameOver(GameOverRegion)
+    #tappertime = .5
+    #TOW_Tug(tappertime) #first we will bring out bar up a bit
+    #amt = incOrDecBy(GameRegion)
+    TOW_isRunning=True
+    t1 = ThreadWithReturnValue(target=TOW_Tug)
+    t1.start()
+    print(t1.join())
+    #tt = .15    #.12 is "normal" ppl type speed, higher means slower
+    amPlayingGame=False
 
-    #amPlayingGame=False
+TOW_INCDEC_AMT = 0.0
 
 def incOrDecBy(GameRegion):
-    amount = 0.0
-    extremeAmt = .05
-    normalAmt = .15
+    global TOW_INCDEC_AMT
+    extremeAmt = -.008
+    slowAmt = .04
     #I feel there is a better way than how I am doing it,
     #but I will first check for too slow or too fast and return relative to that
-    bigspeed = py.locateOnScreen(curDirPlus(TOW_TOOFAST),GameRegion,confidence=.9)
-    if bigspeed is not None:
-        amount = extremeAmt        #increase the time
-        return amount
-    bigspeed = py.locateOnScreen(curDirPlus(TOW_TOOSLOW),GameRegion,confidence=.9)
-    if bigspeed is not None:
-        amount = 0-extremeAmt       #decrease the time
-        return amount
+    
+    while TOW_isRunning:
+        if py.locateOnScreen(curDirPlus(TOW_TOOFAST),confidence=.7) is not None:
+            TOW_INCDEC_AMT = slowAmt
+        elif py.locateOnScreen(curDirPlus(TOW_TOOSLOW),confidence=.7) is not None:
+            TOW_INCDEC_AMT = extremeAmt
+        else:
+            TOW_INCDEC_AMT = -0.00073
+        #time.sleep(.25)
 
-    return 0-normalAmt
+    #once done, set this to 0 for next time 
+    TOW_INCDEC_AMT = 0.0
 
+class ThreadWithReturnValue(Thread):
+    def __init__(self, group=None, target=None, name=None,
+                 args=(), kwargs={}, Verbose=None):
+        Thread.__init__(self, group, target, name, args, kwargs)
+        self._return = None
+    def run(self):
+        #print(type(self._target))
+        if self._target is not None:
+            self._return = self._target(*self._args,
+                                                **self._kwargs)
+    def join(self, *args):
+        Thread.join(self, *args)
+        return self._return
 
-def TOW_Tug(sleep_interval):
-    moveTime = .2
-    moveBy('a',moveTime)
-    time.sleep(sleep_interval)
-    moveBy('d',moveTime)
-    time.sleep(sleep_interval)
+def TOW_Tug():
+    w = (SCREEN_WIDTH)/2
+    h = SCREEN_HEIGHT
+    xOffset = (SCREEN_WIDTH / 10)
+    GameRegion = (int(w-(w/6)),int(h-(h-(h/10))), 320, 400)
+    GameOverRegion = (xOffset,(SCREEN_HEIGHT - (SCREEN_HEIGHT / 5)), SCREEN_WIDTH - (2 * xOffset), SCREEN_HEIGHT - (SCREEN_HEIGHT - (SCREEN_HEIGHT / 5)))
+    normalamt = .3
+    
+    #t2 = threading.Thread(target=incOrDecBy,args=[GameRegion])
+    #t3 = threading.Thread(target=TOW_isGameOver,args=[GameOverRegion])
+    t3 = ThreadWithReturnValue(target=TOW_isGameOver, args=(GameOverRegion,))
+    t3.start()
+    t2 = ThreadWithReturnValue(target=incOrDecBy, args=(GameRegion,))
+    t2.start()
+    while(TOW_isRunning):
+        
+        normalamt += TOW_INCDEC_AMT
+        if(normalamt<0):
+            normalamt=0.01
+        elif(normalamt>1.2):
+            normalamt=.7
+        keyboard.press('a')
+        keyboard.release('a')
+        time.sleep(normalamt)
+        keyboard.press('d')
+        keyboard.release('d')
 
-
+    print(t3.join())
+    return "Done Tugging"
+    
 def TOW_isGameOver(gameOverRegion):
-    amIFound = py.locateOnScreen(curDirPlus(TUG_O_WAR_GAMEOVER),gameOverRegion)
-    if amIFound is None:
-        return False
-    return True
+    global TOW_isRunning
+    count = 0
+    while(TOW_isRunning):
+        if py.locateOnScreen(curDirPlus(TUG_O_WAR_GAMEOVER), confidence=.8):
+            TOW_isRunning = False   #to stop the tugging
+            print("Good Game")
+            return True
+        else:
+            time.sleep(5)
+            count+=1
+            if count > 10:          #time slept times this num is full seconds waited
+                TOW_isRunning=False     
+                print("Something went wrong")
+        
+    return False
 
 #||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 #||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -375,20 +597,33 @@ def TOW_isGameOver(gameOverRegion):
 #add game play above this section as this section will be last
 
 
+#Directory Stuff
+
+
+def curDirPlus(filename):
+    filestuff = os.path.join('Trolley', os.path.join('images', filename))        #this part is for me, as my current working directory is further back (will change when I change cwd)
+    return os.path.join(os.getcwd(),filestuff)
+
+def curDirMem(filename):
+    filestuff = os.path.join('Trolley', os.path.join(r'images\MemGame', filename))        #this part is for me, as my current working directory is further back (will change when I change cwd)
+    return os.path.join(os.getcwd(),filestuff)
+
+#||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+#||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 def waitForBeans():
-    dabeans = py.locateOnScreen(curDirPlus(GETTING_BEANS),confidence=.9)
+    dabeans = py.locateOnScreen(curDirPlus(GETTING_BEANS),confidence=.75)
     while dabeans is None:
         time.sleep(1)
-        dabeans = py.locateOnScreen(curDirPlus(GETTING_BEANS),confidence=.9)
+        dabeans = py.locateOnScreen(curDirPlus(GETTING_BEANS),confidence=.75)
 
 def afterGame():
     """Loops indefinitly as playingGameTypeAgain is True"""
     global playingGameTypeAgain
     #first wait until it is on jellybean page
-    beans = py.locateOnScreen(curDirPlus(GETTING_BEANS))
+    beans = py.locateOnScreen(curDirPlus(GETTING_BEANS),confidence=.7)
     while beans is None:
         time.sleep(.5)
-        beans = py.locateOnScreen(curDirPlus(GETTING_BEANS))
+        beans = py.locateOnScreen(curDirPlus(GETTING_BEANS),confidence=.7)
 
     playingGameTypeAgain = wannaPlayAgain()
     while playingGameTypeAgain is True:
@@ -401,9 +636,6 @@ def afterGame():
         time.sleep(2)
     time.sleep(2)  
 
-def curDirPlus(filename):
-    filestuff = os.path.join('AdvancedScripts\\TTCC\\Trolley', os.path.join('images', filename))        #this part is for me, as my current working directory is further back (will change when I change cwd)
-    return os.path.join(os.getcwd(),filestuff)
 
 def checkGameInList():
     #3 ways to handle this that I can think of
@@ -469,6 +701,9 @@ def countdownSounds():
 def skipGame():
     print("Skipping Game")
     cc = py.locateOnScreen(curDirPlus(SKIP_BUTTON))
+    while not cc:
+        time.sleep(.5)
+        cc = py.locateOnScreen(curDirPlus(SKIP_BUTTON))
     py.moveTo(cc)
     py.click()
     time.sleep(1.4)
@@ -477,7 +712,7 @@ def skipGame():
 def checkIfOnTrolley():
 
     winsound.Beep(100,300)
-    findMe = py.locateOnScreen(curDirPlus(TROLLEY),confidence=.9)
+    findMe = py.locateOnScreen(curDirPlus(TROLLEY),confidence=.8)
     if findMe is None:
         raise Exception("No Trolley Found")
     print("On Trolley, hopefully no one else is on")
